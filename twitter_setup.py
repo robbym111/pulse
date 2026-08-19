@@ -6,7 +6,10 @@ Cookie-based auth bypasses Cloudflare blocks on automated logins.
 How to get your cookies:
   1. Open x.com in your browser and log in
   2. Open DevTools (F12 or Cmd+Option+I)
-  3. Go to Application → Cookies → https://x.com
+  3. Find the cookie store for https://x.com:
+       • Chrome/Edge/Arc: Application tab → Storage → Cookies
+       • Safari:          Storage tab → Cookies   (NOT "Application")
+       • Firefox:         Storage tab → Cookies
   4. Find and copy the values for: auth_token  and  ct0
 
 Usage:
@@ -30,7 +33,9 @@ async def main():
     print("  Instead, grab your cookies from your browser:\n")
     print("    1. Go to x.com and log in")
     print("    2. Open DevTools (F12 or Cmd+Option+I)")
-    print("    3. Application tab → Cookies → https://x.com")
+    print("    3. Find Cookies for https://x.com:")
+    print("         Chrome/Arc: Application tab -> Cookies")
+    print("         Safari:     Storage tab -> Cookies  (NOT Application)")
     print("    4. Copy the values for 'auth_token' and 'ct0'\n")
 
     username = input("  Twitter username (without @): ").strip()
