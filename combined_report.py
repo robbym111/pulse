@@ -552,6 +552,10 @@ def main():
     json_path = f"pulse_{safe}_{stamp}.json"
     write_json(run, json_path)
     print(f"  ✓ JSON export:    {json_path}")
+    from dashboard import write_dashboard
+    dash_path = f"pulse_{safe}_{stamp}_dashboard.html"
+    write_dashboard(run, dash_path)
+    print(f"  ✓ Dashboard:      {dash_path}  (open it in your browser)")
     if not args.no_db:
         try:
             append_history(run, args.db, json_path)

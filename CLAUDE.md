@@ -37,6 +37,7 @@ affinity_map                   -> co-mentioned artists/brands/shows/places (+1 c
 footprint                      -> per-platform share, mood, over-indexed themes (+1 call)
 export                         -> pulse_*.json per run + append to pulse_history.db
 history.py                     -> CLI over pulse_history.db (trend / compare / sql)
+dashboard                      -> pulse_*_dashboard.html, self-contained, from the run JSON
 output.py                      -> terminal summary + CSV
 combined_report.py             -> unified .md brief
 ```
@@ -133,6 +134,15 @@ politics, etc.) as a reason to target someone.
 - **Built: export layer** (`export.py`, `history.py`). One JSON per run, plus
   a SQLite history (runs, items, creators, affinities, platforms). Re-appending
   a run_id replaces it. Both files are gitignored.
+
+## Dashboard
+
+`dashboard.py` renders the run dict (same shape as the JSON export) into one
+HTML file: inline CSS/JS, hand-built SVG charts, no external requests. Scraped
+text is embedded as JSON and only ever inserted with textContent. Colors are
+tokens on :root with light/dark variants (palette validated for CVD).
+Strategist reads sometimes return bullets as objects rather than strings;
+both the dashboard (`txt`) and the Markdown sections flatten them.
 
 ## Conventions
 

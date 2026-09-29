@@ -145,6 +145,25 @@ the whole pulse). A strategist read adds a concrete play per platform and
 gaps to act on (e.g. lots of volume on X but a sour mood). Shares reflect
 your fetch limits, not total platform size.
 
+### Dashboard
+
+Every run also writes **`pulse_<query>_<stamp>_dashboard.html`**. Double-click
+it to open it in your browser. It's one self-contained file (no server, no
+login, works offline), so you can email it or drop it into Slack as-is.
+
+It has the headline and TL;DR, a platform filter over KPIs, volume and mood
+by day, top themes, sentiment mix, and receipts; then the platform footprint,
+Creator Discovery, the Affinity Map, TikTok sounds, and each platform's brief.
+It has light and dark mode, works on a phone, and every chart has a
+"View as table" option.
+
+Rebuild a dashboard from any earlier run's JSON:
+
+```bash
+python3 dashboard.py --latest                                  # newest run in this folder
+python3 dashboard.py pulse_phoebe_bridgers_20260929_1543.json
+```
+
 ### JSON export + history across runs
 
 Every run also writes:

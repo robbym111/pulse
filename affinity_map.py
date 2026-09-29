@@ -208,6 +208,13 @@ def _cell(s):
     return str(s).replace("|", "/").replace("\n", " ")
 
 
+def _bullet(v):
+    """Reads sometimes return a bullet as an object ({label, detail}); flatten to text."""
+    if isinstance(v, dict):
+        return " — ".join(str(x) for x in v.values() if not isinstance(x, (dict, list)))
+    return str(v)
+
+
 def _plats(e):
     return ", ".join(f"{PLATFORM_LABELS.get(p, p)} {c}" for p, c in e["platforms"].items())
 
@@ -226,7 +233,7 @@ def markdown_section(entities, read=None, per_type=8):
     if read and read.get("positioning"):
         L.append("**How fans position the artist**")
         L.append("")
-        L.extend(f"- {p}" for p in read["positioning"])
+        L.extend(f"- {_bullet(p)}" for p in read["positioning"])
         L.append("")
 
     by_type = defaultdict(list)
@@ -259,7 +266,7 @@ def markdown_section(entities, read=None, per_type=8):
     if read and read.get("cautions"):
         L.append("**Cautions**")
         L.append("")
-        L.extend(f"- {c}" for c in read["cautions"])
+        L.extend(f"- {_bullet(c)}" for c in read["cautions"])
         L.append("")
     return L
 
