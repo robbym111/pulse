@@ -34,6 +34,9 @@ claude_sentiment.score_items() -> label, score (-1..+1), themes (batched)
 brief.synthesize_brief()       -> per-source narrative brief (one call per source)
 creator_discovery              -> rank accounts by engagement generated (+1 call)
 affinity_map                   -> co-mentioned artists/brands/shows/places (+1 call)
+footprint                      -> per-platform share, mood, over-indexed themes (+1 call)
+export                         -> pulse_*.json per run + append to pulse_history.db
+history.py                     -> CLI over pulse_history.db (trend / compare / sql)
 output.py                      -> terminal summary + CSV
 combined_report.py             -> unified .md brief
 ```
@@ -122,7 +125,14 @@ politics, etc.) as a reason to target someone.
   posts), with platform split, avg sentiment and an example. One read adds
   positioning, partnership angles and cautions. There's no population
   baseline, so it's co-mention, not a true affinity index.
-- Not started: Cross-Platform Footprint view, structured data-export layer.
+- **Built: Cross-Platform Footprint** (`footprint.py`). Per platform: share
+  of items and distinct authors, mood, median engagement (never summed
+  across platforms, since the currencies differ), and themes/mentions indexed
+  against the pulse average (shown as multiples, e.g. 2.6×). Brief section
+  only when 2+ platforms. The read gives a play per platform and gaps.
+- **Built: export layer** (`export.py`, `history.py`). One JSON per run, plus
+  a SQLite history (runs, items, creators, affinities, platforms). Re-appending
+  a run_id replaces it. Both files are gitignored.
 
 ## Conventions
 
