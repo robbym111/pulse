@@ -226,8 +226,8 @@ footer { margin-top: 56px; color: var(--muted); font-size: 13px; }
   <div class="grid kpis" id="kpis"></div>
 
   <div class="grid g2" style="margin-top:16px">
-    <div class="card"><h3>Volume by day</h3><div class="chart" id="volume"></div></div>
-    <div class="card"><h3>Mood by day</h3><p class="note">Average sentiment, −1 to +1</p><div class="chart" id="mood"></div></div>
+    <div class="card"><h3 id="volTitle">Volume by day</h3><p class="note" id="timeNote" hidden></p><div class="chart" id="volume"></div></div>
+    <div class="card"><h3 id="moodTitle">Mood by day</h3><p class="note">Average sentiment, −1 to +1</p><div class="chart" id="mood"></div></div>
   </div>
   <div class="grid g2" style="margin-top:16px">
     <div class="card"><h3>What people are talking about</h3><p class="note">Top themes by number of posts</p><div class="chart" id="themes"></div></div>
@@ -378,7 +378,7 @@ footer { margin-top: 56px; color: var(--muted); font-size: 13px; }
   // Columns over days (one series). pts: {x: Date, value}
   function columns(host, pts, opts) {
     host.replaceChildren();
-    if (pts.length < 2) { host.append(el("p", { class: "note" }, "Not enough dated posts to chart by day.")); return; }
+    if (pts.length < 2) { host.append(el("p", { class: "note" }, "Not enough dated posts to chart over time.")); return; }
     const W = Math.max(280, host.clientWidth), H = 190, L = 40, B = 24, T = 8;
     const max = niceMax(Math.max(...pts.map((p) => p.value)));
     const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": opts.title });
@@ -395,13 +395,13 @@ footer { margin-top: 56px; color: var(--muted); font-size: 13px; }
     });
     xLabels(s, pts, L, band, H);
     host.append(s);
-    tableView(host, ["Day", "Posts"], pts.map((p) => [dayLabel(p.x), fmt(p.value)]));
+    tableView(host, [unit[0].toUpperCase() + unit.slice(1), "Posts"], pts.map((p) => [dayLabel(p.x), fmt(p.value)]));
   }
 
   // Line over days on a fixed −1..+1 scale with a zero baseline.
   function line(host, pts, opts) {
     host.replaceChildren();
-    if (pts.length < 2) { host.append(el("p", { class: "note" }, "Not enough dated posts to chart by day.")); return; }
+    if (pts.length < 2) { host.append(el("p", { class: "note" }, "Not enough dated posts to chart over time.")); return; }
     const W = Math.max(280, host.clientWidth), H = 190, L = 40, B = 24, T = 8;
     const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": opts.title });
     const y = (v) => T + (H - B - T) * (1 - (v + 1) / 2);
@@ -424,7 +424,7 @@ footer { margin-top: 56px; color: var(--muted); font-size: 13px; }
     });
     xLabels(s, pts, L, band, H);
     host.append(s);
-    tableView(host, ["Day", "Avg sentiment", "Posts"], pts.map((p) => [dayLabel(p.x), sgn(p.value), fmt(p.n)]));
+    tableView(host, [unit[0].toUpperCase() + unit.slice(1), "Avg sentiment", "Posts"], pts.map((p) => [dayLabel(p.x), sgn(p.value), fmt(p.n)]));
   }
 
   // Diverging stacked bars: negative left of center, neutral/mixed straddling it, positive right.
@@ -474,13 +474,17 @@ footer { margin-top: 56px; color: var(--muted); font-size: 13px; }
       const t = svg("text", { x: L - 6, y: y + 4, "text-anchor": "end" }); t.textContent = f(max * fr); s.append(t);
     });
   }
-  function dayLabel(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
+  function dayLabel(d) {
+    if (unit === "month") return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+    const o = { month: "short", day: "numeric" }; if (multiYear) o.year = "2-digit";
+    return (unit === "week" ? "Wk of " : "") + d.toLocaleDateString(undefined, o);
+  }
   function xLabels(s, pts, L, band, H) {
     const every = Math.ceil(pts.length / Math.max(2, Math.floor((band * pts.length) / 64)));
     pts.forEach((p, i) => {
       if (i % every && i !== pts.length - 1) return;
       const t = svg("text", { x: L + i * band + band / 2, y: H - 6, "text-anchor": "middle" });
-      t.textContent = dayLabel(p.x); s.append(t);
+      t.textContent = dayLabel(p.x).replace("Wk of ", ""); s.append(t);
     });
   }
 
@@ -490,17 +494,39 @@ footer { margin-top: 56px; color: var(--muted); font-size: 13px; }
   let current = "all", quoteLimit = 9;
   const scoped = () => current === "all" ? D.items : D.items.filter((i) => i.p === current);
 
-  function byDay(items) {
+  // Bucket by day, week or month depending on how far back the posts go
+  // (YouTube comments can span years), filling empty buckets with zero.
+  const WINDOW_DAYS = 60;  // older posts (e.g. top comments on old YouTube videos) aren't charted
+  let unit = "day", multiYear = false, olderCount = 0, windowStart = null;
+  function bucketStart(d) {
+    const b = new Date(d); b.setHours(0, 0, 0, 0);
+    if (unit === "week") b.setDate(b.getDate() - ((b.getDay() + 6) % 7));  // Monday
+    if (unit === "month") b.setDate(1);
+    return b;
+  }
+  function step(d) { if (unit === "day") d.setDate(d.getDate() + 1); else if (unit === "week") d.setDate(d.getDate() + 7); else d.setMonth(d.getMonth() + 1); }
+  function byPeriod(items) {
+    let ts = items.filter((i) => i.ts).map((i) => i.ts * 1000);
+    olderCount = 0; windowStart = null;
+    if (!ts.length) return [];
+    const hi = Math.max(...ts);
+    if ((hi - Math.min(...ts)) / 864e5 > WINDOW_DAYS) {
+      windowStart = hi - WINDOW_DAYS * 864e5;
+      olderCount = ts.filter((t) => t < windowStart).length;
+      ts = ts.filter((t) => t >= windowStart);
+      items = items.filter((i) => i.ts * 1000 >= windowStart);
+    }
+    const lo = Math.min(...ts), spanDays = (hi - lo) / 864e5;
+    unit = spanDays <= 45 ? "day" : spanDays <= 400 ? "week" : "month";
+    multiYear = new Date(lo).getFullYear() !== new Date(hi).getFullYear();
     const m = new Map();
     for (const it of items) {
       if (!it.ts) continue;
-      const d = new Date(it.ts * 1000); d.setHours(0, 0, 0, 0);
-      const k = +d; const e = m.get(k) || { x: d, value: 0, sum: 0 }; e.value++; e.sum += it.s; m.set(k, e);
+      const b = bucketStart(new Date(it.ts * 1000)), k = +b;
+      const e = m.get(k) || { x: b, value: 0, sum: 0 }; e.value++; e.sum += it.s; m.set(k, e);
     }
-    const days = [...m.values()].sort((a, b) => a.x - b.x);
-    if (!days.length) return [];
-    const out = [], end = days[days.length - 1].x;
-    for (let d = new Date(days[0].x); d <= end && out.length < 120; d.setDate(d.getDate() + 1)) {
+    const out = [], end = bucketStart(new Date(hi));
+    for (let d = bucketStart(new Date(lo)); d <= end; step(d)) {
       const e = m.get(+d); out.push({ x: new Date(d), value: e ? e.value : 0, sum: e ? e.sum : 0 });
     }
     return out;
@@ -659,9 +685,14 @@ footer { margin-top: 56px; color: var(--muted); font-size: 13px; }
   function drawScoped() {
     const items = scoped();
     kpis(items);
-    const days = byDay(items);
-    columns($("volume"), days, { title: "Posts per day" });
-    line($("mood"), days.filter((d) => d.value).map((d) => ({ x: d.x, value: d.sum / d.value, n: d.value })), { title: "Average sentiment per day" });
+    const days = byPeriod(items);
+    $("volTitle").textContent = "Volume by " + unit;
+    const tn = $("timeNote");
+    tn.hidden = !olderCount;
+    tn.textContent = olderCount ? `Last ${WINDOW_DAYS} days. ${fmt(olderCount)} older posts (before ${new Date(windowStart).toLocaleDateString(undefined, { dateStyle: "medium" })}) aren't charted.` : "";
+    $("moodTitle").textContent = "Mood by " + unit;
+    columns($("volume"), days, { title: "Posts per " + unit });
+    line($("mood"), days.filter((d) => d.value).map((d) => ({ x: d.x, value: d.sum / d.value, n: d.value })), { title: "Average sentiment per " + unit });
     const th = new Map();
     items.forEach((i) => i.th.forEach((t) => { const e = th.get(t) || { n: 0, s: 0 }; e.n++; e.s += i.s; th.set(t, e); }));
     hbar($("themes"), [...th.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 10)
