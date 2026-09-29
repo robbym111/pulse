@@ -115,6 +115,25 @@ Produces:
 - `pulse_reddit_...csv`, `pulse_youtube_...csv`, etc. — per-source CSVs
 - `pulse_creators_...csv` — every account in the pulse, ranked (see Creator Discovery)
 
+### TikTok: artist account + sounds
+
+Just give the artist (and optionally a song in quotes). TikTok automatically:
+
+1. searches the artist's hashtags (`#phoebebridgers`, ...),
+2. finds the artist's own account and pulls their recent videos + comments,
+3. finds the artist's **sounds** from every video it saw (credited to the
+   artist, or titled like the song in quotes), and pulls the videos people
+   are making with the top 3.
+
+The brief gets a **TikTok sounds** table: TikTok's total video count for each
+sound, and the top creators using it. To always track a specific sound, pass
+its link (the `tiktok.com/music/...` one, not a `/discover/` page):
+
+```bash
+python3 combined_report.py 'phoebe bridgers "kill me"' --since 7d \
+  --tiktok-sounds https://www.tiktok.com/music/Kill-Me-7673480507100121104
+```
+
 ### Creator Discovery
 
 Every combined run ends its brief with a **Creator Discovery** section: the
@@ -167,6 +186,10 @@ python3 main.py "Lost Boys" \
 | `--skip-tiktok` | — | Skip that source |
 | `--tiktok-videos` | `10` | TikTok videos to scrape |
 | `--tiktok-comments` | `20` | Comments per TikTok video |
+| `--tiktok-sounds` | — | Sound links/ids to always pull (comma-separated) |
+| `--tiktok-max-sounds` | `3` | Extra sounds found automatically (0 = off) |
+| `--tiktok-sound-videos` | `20` | Videos pulled per sound |
+| `--tiktok-artist-videos` | `10` | Recent videos from the artist's own account (0 = off) |
 | `--creators` | `15` | Accounts shown in the Creator Discovery table |
 | `--skip-creators` | — | Skip Creator Discovery |
 

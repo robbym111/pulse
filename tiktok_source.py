@@ -15,6 +15,17 @@ so we search by hashtag instead: we turn the query into hashtag candidates
 (quoted phrases and the artist name, smashed into tags) and pull videos +
 their comment threads from each.
 
+For music, the richer signal is the videos made WITH the song's sound, so on
+top of hashtags we also:
+  1. find the artist's own account (account search on the bare terms of the
+     query) and pull their recent videos,
+  2. harvest sounds from every video we've seen, keeping the ones credited to
+     the artist or titled like a quoted phrase in the query,
+  3. pull the videos using the top few sounds (plus any sound links passed in
+     via `sounds`).
+Each video records how we found it (`tiktok_via`) and its sound, so the brief
+can report per-sound adoption.
+
 Setup (run once):
     python3 tiktok_setup.py
 """
@@ -59,7 +70,12 @@ def _impact(view_count, like_count, comment_count, share_count):
     )
 
 
-def _video_to_item(video):
+def _music(d):
+    m = d.get("music") or {}
+    return m if isinstance(m, dict) else {}
+
+
+def _video_to_item(video, via="hashtag"):
     try:
         d = video.as_dict  # all fields live here, not as attributes
         desc = clean_text(d.get("desc") or "")
@@ -83,6 +99,7 @@ def _video_to_item(video):
         share_count = _stat("shareCount")
 
         created_utc = int(d.get("createTime") or 0)
+        music = _music(d)
 
         return {
             "platform": "tiktok",
@@ -101,6 +118,10 @@ def _video_to_item(video):
             "text": desc,
             "view_count": view_count,
             "share_count": share_count,
+            "tiktok_via": via,
+            "sound_id": str(music.get("id") or ""),
+            "sound_title": music.get("title") or "",
+            "sound_author": music.get("authorName") or "",
         }
     except Exception:
         return None
@@ -201,6 +222,131 @@ def _hashtag_candidates(keyword):
     return out
 
 
+# --------------------------------------------------------------------------
+# Artist account + sounds
+# --------------------------------------------------------------------------
+
+_SOUND_ID_RE = re.compile(r"/music/[^/?#]*?-?(\d{8,})")
+_HANDLE_SUFFIX = re.compile(r"(official|music|vevo|tv|hq)$")
+
+
+def parse_sound_ref(ref):
+    """Sound URL (tiktok.com/music/Kill-Me-7673480507100121104) or bare id → id.
+    Returns None for anything else, e.g. a /discover/ search page."""
+    ref = (ref or "").strip()
+    if ref.isdigit():
+        return ref
+    m = _SOUND_ID_RE.search(ref)
+    return m.group(1) if m else None
+
+
+def _artist_name(keyword):
+    """The bare (unquoted) terms of the query, e.g. 'phoebe bridgers' for
+    'phoebe bridgers "lost boys"'. None if the query is only phrases."""
+    _, terms = parse_query(keyword)
+    return " ".join(terms) or None
+
+
+def _is_artist_handle(name, artist):
+    """Strict: the handle/name IS the artist (phoebebridgers, PhoebeBridgersOfficial),
+    so fan pages like phoebebridgersfanpage don't pass."""
+    a = _smash(artist or "")
+    return len(a) >= 4 and _HANDLE_SUFFIX.sub("", _smash(name or "")) == a
+
+
+def _credits_artist(author_name, artist):
+    """Loose: a sound's credit line names the artist ('Phoebe Bridgers & Bo Burnham')."""
+    a = _smash(artist or "")
+    return len(a) >= 4 and a in _smash(author_name or "")
+
+
+def _sound_matches(music, artist, phrases):
+    title = (music.get("title") or "").lower()
+    if artist and _credits_artist(music.get("authorName"), artist):
+        return True
+    return any(p.lower() in title for p in phrases)
+
+
+def _rank_sounds(video_dicts, artist, phrases):
+    """Count how often each on-topic sound appears across videos we've seen."""
+    counts, info = {}, {}
+    for d in video_dicts:
+        m = _music(d)
+        sid = str(m.get("id") or "")
+        if not sid or not _sound_matches(m, artist, phrases):
+            continue
+        counts[sid] = counts.get(sid, 0) + 1
+        info[sid] = m
+    return [(sid, info[sid]) for sid in sorted(counts, key=counts.get, reverse=True)]
+
+
+async def _find_artist_account(api, artist):
+    """Best-effort: the artist's own account from TikTok's account search."""
+    try:
+        cands = []
+        async for user in api.search.users(artist, count=8):
+            cands.append(user)
+        for user in cands:
+            if _is_artist_handle(getattr(user, "username", ""), artist):
+                return user
+        for user in cands[:3]:  # fall back to display names
+            info = await user.info()
+            u = (info.get("userInfo") or {}).get("user") or {}
+            if u.get("verified") and _is_artist_handle(u.get("nickname"), artist):
+                return user
+    except Exception as e:
+        print(f"      account search failed: {str(e)[:90]}")
+    return None
+
+
+async def _videos_from(feed, via, want, cutoff, seen_ids, extra=None):
+    """Drain an async video feed into (video, item) pairs, skipping dupes/old."""
+    out = []
+    try:
+        async for video in feed:
+            item = _video_to_item(video, via=via)
+            if item is None or item["id"] in seen_ids:
+                continue
+            if cutoff and item["created_utc"] and \
+                    datetime.fromtimestamp(item["created_utc"], tz=timezone.utc) < cutoff:
+                continue
+            if extra:
+                item.update(extra)
+            seen_ids.add(item["id"])
+            out.append((video, item))
+            if len(out) >= want:
+                break
+    except Exception as e:
+        print(f"      ({via} feed stopped: {str(e)[:90]})")
+    return out
+
+
+async def _sound_videos(api, sound_id, want, cutoff, seen_ids):
+    """Videos made with one sound. Tags each with the sound's total video count."""
+    sound = api.sound(id=sound_id)
+    title, author, total = "", "", None
+    try:
+        info = await sound.info()
+        mi = info.get("musicInfo") or {}
+        m, st = mi.get("music") or {}, mi.get("stats") or {}
+        title, author = m.get("title") or "", m.get("authorName") or ""
+        total = st.get("videoCount")
+    except Exception as e:
+        print(f"      sound {sound_id} info failed: {str(e)[:90]}")
+    print(f"    Sound: {title or sound_id} — {author or '?'}"
+          + (f" · {total:,} videos on TikTok" if isinstance(total, int) else ""))
+    extra = {"sound_id": sound_id, "sound_video_count": total}
+    if title:
+        extra["sound_title"] = title
+    if author:
+        extra["sound_author"] = author
+    # Sound feeds aren't chronological, so scan deeper when a cutoff applies.
+    scan = want * 3 if cutoff else want
+    pairs = await _videos_from(sound.videos(count=scan), "sound", want, cutoff, seen_ids, extra)
+    print(f"      +{len(pairs)} videos using this sound")
+    return pairs
+
+
 async def _create_sessions(api):
     """Try browser strategies until one builds a working session."""
     last_err = None
@@ -295,7 +441,8 @@ async def _comments_for_video(video, comments_per_video):
         return out, True
 
 
-async def _fetch(keyword, video_limit, comments_per_video, time_filter, since_cutoff=None):
+async def _fetch(keyword, video_limit, comments_per_video, time_filter, since_cutoff=None,
+                 sounds=None, max_sounds=3, sound_videos=20, artist_videos=10):
     from TikTokApi import TikTokApi
 
     if not MS_TOKEN:
@@ -310,9 +457,20 @@ async def _fetch(keyword, video_limit, comments_per_video, time_filter, since_cu
     candidates = _hashtag_candidates(keyword)
     is_relevant = relevance_matcher(keyword)
     phrases, terms = parse_query(keyword)
+    artist = _artist_name(keyword)
     print(f"    Hashtag candidates: {', '.join('#' + c for c in candidates)}")
     print(f"    Relevance: phrase{'s' if len(phrases)!=1 else ''} {phrases or '—'} "
           f"OR all terms {terms or '—'}")
+
+    explicit = []
+    for ref in sounds or []:
+        sid = parse_sound_ref(ref)
+        if sid:
+            explicit.append(sid)
+        else:
+            print(f"    ! Not a sound link, skipping: {ref}\n"
+                  f"      (Use a tiktok.com/music/... link. /discover/ pages are search "
+                  f"pages; the artist search already covers them.)")
 
     items = []
     async with TikTokApi() as api:
@@ -320,6 +478,8 @@ async def _fetch(keyword, video_limit, comments_per_video, time_filter, since_cu
 
         pairs = []  # (video_obj, item_dict)
         seen_ids = set()
+
+        # 1. Hashtags
         for htag in candidates:
             if len(pairs) >= video_limit:
                 break
@@ -331,14 +491,48 @@ async def _fetch(keyword, video_limit, comments_per_video, time_filter, since_cu
             pairs.extend(found)
             print(f"      +{len(found)} relevant videos (total {len(pairs)})")
 
+        # 2. The artist's own account
+        seen_dicts = [v.as_dict for v, _ in pairs]
+        if artist and artist_videos:
+            print(f"    Looking for {artist}'s TikTok account...")
+            user = await _find_artist_account(api, artist)
+            if user:
+                print(f"      Found @{getattr(user, 'username', '?')}")
+                own = await _videos_from(user.videos(count=artist_videos), "artist_account",
+                                         artist_videos, cutoff, seen_ids)
+                pairs.extend(own)
+                seen_dicts += [v.as_dict for v, _ in own]
+                print(f"      +{len(own)} of their recent videos")
+            else:
+                print("      No matching account found.")
+
+        # 3. Sounds: explicit links first, then the most common on-topic sounds
+        sound_ids = list(explicit)
+        if max_sounds:
+            for sid, m in _rank_sounds(seen_dicts, artist, phrases):
+                if len(sound_ids) >= len(explicit) + max_sounds:
+                    break
+                if sid not in sound_ids:
+                    sound_ids.append(sid)
+        if sound_ids:
+            print(f"    Pulling videos for {len(sound_ids)} sound(s)...")
+        for sid in sound_ids:
+            pairs.extend(await _sound_videos(api, sid, sound_videos, cutoff, seen_ids))
+
         for _, item in pairs:
             items.append(item)
 
+        # Comments: the most-engaged videos first, since the endpoint gets
+        # bot-blocked and we may not get through all of them.
+        pairs.sort(key=lambda p: p[1]["impact"], reverse=True)
         print(f"    Pulling comments from {len(pairs)} videos...")
         consecutive_blocks = 0
         total_comments = 0
         for video, item in pairs:
             comments, blocked = await _comments_for_video(video, comments_per_video)
+            for c in comments:  # carry the sound so comments count toward it
+                for k in ("sound_id", "sound_title", "sound_author", "tiktok_via"):
+                    c[k] = item.get(k)
             items.extend(comments)
             total_comments += len(comments)
             if blocked and not comments:
@@ -356,15 +550,63 @@ async def _fetch(keyword, video_limit, comments_per_video, time_filter, since_cu
     return items
 
 
-def fetch_items(keyword, video_limit=20, comments_per_video=30, time_filter="week", since=None):
+def fetch_items(keyword, video_limit=20, comments_per_video=30, time_filter="week", since=None,
+                sounds=None, max_sounds=3, sound_videos=20, artist_videos=10):
     """Standard interface matching all other source modules.
 
     `since` accepts a timezone-aware datetime (from --since) and overrides
-    the time_filter-derived cutoff.
+    the time_filter-derived cutoff. `sounds` is a list of sound links/ids to
+    always pull; `max_sounds` more are found automatically (0 = off).
+    `artist_videos` recent videos are pulled from the artist's own account.
     """
     print(f"    Searching TikTok for: {keyword!r}")
-    items = asyncio.run(_fetch(keyword, video_limit, comments_per_video, time_filter, since_cutoff=since))
+    items = asyncio.run(_fetch(keyword, video_limit, comments_per_video, time_filter,
+                               since_cutoff=since, sounds=sounds, max_sounds=max_sounds,
+                               sound_videos=sound_videos, artist_videos=artist_videos))
     posts = sum(1 for i in items if i["type"] == "post")
     comments = len(items) - posts
     print(f"    Got {posts} videos + {comments} comments")
     return items
+
+
+# --------------------------------------------------------------------------
+# Brief section: per-sound adoption
+# --------------------------------------------------------------------------
+
+def _sound_url(sid, title):
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", title or "sound").strip("-") or "sound"
+    return f"https://www.tiktok.com/music/{slug}-{sid}"
+
+
+def sound_markdown(items, top_creators=3):
+    """Markdown lines summarizing the sounds pulled (videos found via a sound)."""
+    by_sound = {}
+    for it in items:
+        if it.get("tiktok_via") != "sound" or not it.get("sound_id"):
+            continue
+        by_sound.setdefault(it["sound_id"], []).append(it)
+    if not by_sound:
+        return []
+
+    L = ["---", "## TikTok sounds — who's making videos with the music", ""]
+    L.append("| Sound | Videos on TikTok | Pulled here | Views (pulled) | Avg sentiment | Top creators on it |")
+    L.append("|---|---|---|---|---|---|")
+    for sid, its in sorted(by_sound.items(), key=lambda kv: -len(kv[1])):
+        vids = [i for i in its if i["type"] == "post"]
+        first = vids[0] if vids else its[0]
+        title = first.get("sound_title") or sid
+        author = first.get("sound_author") or ""
+        total = first.get("sound_video_count")
+        views = sum(i.get("view_count", 0) or 0 for i in vids)
+        scores = [i.get("sentiment_score", 0.0) for i in its if "sentiment_score" in i]
+        avg = f"{sum(scores) / len(scores):+.2f}" if scores else "—"
+        tops = sorted(vids, key=lambda i: i.get("impact", 0), reverse=True)[:top_creators]
+        creators = ", ".join(f"[{i['author']}]({i['permalink']})" for i in tops) or "—"
+        name = f"[{title}]({_sound_url(sid, title)})" + (f" — {author}" if author else "")
+        L.append(f"| {name.replace('|', '/')} | {f'{total:,}' if isinstance(total, int) else '—'} | "
+                 f"{len(vids)} videos, {len(its) - len(vids)} comments | {views:,} | {avg} | {creators} |")
+    L.append("")
+    L.append("*\"Videos on TikTok\" is TikTok's own count for the sound. The rest covers "
+             "only the videos pulled in this run.*")
+    L.append("")
+    return L

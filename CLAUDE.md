@@ -93,7 +93,13 @@ running CLI commands once things are set up.
 - `twitter_setup.py`'s add-account silently no-ops if the username is already
   in the pool. Delete the account first so new cookies actually get written.
 - TikTok is the flakiest source (ms_token expires, anti-bot changes). It's
-  often skipped with `--skip-tiktok`.
+  often skipped with `--skip-tiktok`. TikTokApi has no keyword video search,
+  so `tiktok_source` combines hashtags, the artist's account (found via user
+  search on the query's bare terms) and sound feeds (`api.sound(id).videos()`).
+  Each item records `tiktok_via` (hashtag / artist_account / sound) and its sound.
+- Instagram: no source. Scraping it isn't viable; the official Graph API
+  needs admin access to the artist's business account, which the user
+  doesn't have.
 
 ## Audience intelligence (StatSocial-style)
 

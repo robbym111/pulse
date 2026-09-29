@@ -147,6 +147,7 @@ def write_csv(items, path):
         "sentiment_label", "sentiment_score", "themes",
         "like_count", "retweet_count", "reply_count", "quote_count",
         "view_count", "share_count", "video_channel",
+        "tiktok_via", "sound_title", "sound_author",
         "permalink", "text",
     ]
     with open(path, "w", newline="", encoding="utf-8") as f:
