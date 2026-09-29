@@ -13,9 +13,8 @@ CSVs, and a marketer's brief in Markdown.
 |---|---|
 | `combined_report.py` | Main runner — all five sources, produces the brief |
 | `main.py` | Quick runner — Reddit + Twitter only |
-| `pulse.py` | Saved-config runner — `run`, `new`, `list` commands |
 | `common.py` | Shared item schema, text cleaning, junk filter |
-| `reddit_source.py` | Reddit via PRAW |
+| `reddit_source.py` | Reddit via public RSS feeds (no credentials) |
 | `twitter_source.py` | Twitter/X via twscrape |
 | `youtube_source.py` | YouTube via Data API v3 |
 | `tiktok_source.py` | TikTok via TikTokApi (scraper, flaky) |
@@ -49,8 +48,9 @@ Open `.env` and add your keys. Full list below.
 
 ### 3. One-time source setup
 
-**Reddit** — create a free "script" app at reddit.com/prefs/apps.
-Copy the client ID (under the app name) and secret into `.env`.
+**Reddit** — no setup needed. Uses Reddit's public RSS feeds (API app
+registration is gated behind a manual approval form, so we don't use it).
+Post scores are fetched best-effort from the public JSON endpoint.
 
 **Twitter/X** — run the cookie setup script once:
 ```bash
@@ -85,11 +85,6 @@ to add or remove outlets.
 ## Credentials (.env)
 
 ```bash
-# Reddit
-REDDIT_CLIENT_ID=your_client_id
-REDDIT_CLIENT_SECRET=your_client_secret
-REDDIT_USER_AGENT=reddit-pulse/0.1 by u/yourusername
-
 # Twitter/X (set by twitter_setup.py — don't edit manually)
 # stored in .twscrape/accounts.db
 
@@ -126,17 +121,6 @@ python3 main.py "Lost Boys" \
   --sources reddit,twitter \
   --subreddits indieheads,popheads,phoebebridgers,BoyGenius,fantanoforever,folk
 ```
-
-### Saved pulse configs
-
-```bash
-python3 pulse.py new              # create a named config interactively
-python3 pulse.py run lostboys     # run a saved config
-python3 pulse.py list             # see all saved configs
-python3 pulse.py show lostboys    # inspect a config
-```
-
-Configs live in `pulses/`. Results land in `results/<name>/pulse_TIMESTAMP.csv`.
 
 ---
 

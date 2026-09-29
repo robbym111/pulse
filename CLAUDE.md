@@ -45,8 +45,8 @@ combined_report.py             -> unified .md brief
 - Sources fail gracefully: they log the problem and return what they have,
   so one broken source doesn't kill the run. Keep it that way.
 - `reddit_source.py` uses Reddit's public RSS/JSON feeds, not PRAW, so it
-  needs no credentials. The README and `.env.example` still mention PRAW
-  and the `REDDIT_*` variables; that's out of date.
+  needs no credentials. Reddit gates API app registration behind a manual
+  approval form, which is why.
 - `social_search_source.py` is a Brave Search fallback for social content.
 
 ## Config / secrets
@@ -63,6 +63,45 @@ These are read from `.env` via python-dotenv, or from environment variables:
 
 Never commit `.env`, `.twscrape/`, cookies, or tokens (all gitignored).
 Generated `pulse_*.csv` and `pulse_*_brief.md` files are gitignored too.
+
+## Who uses this and what they want
+
+The user is a creative marketer in music, not an engineer. They're comfortable
+running CLI commands once things are set up.
+
+- The primary deliverable is the `_brief.md`. CSVs and terminal output are
+  secondary. Briefs go into decks and get shared with teams.
+- Brief structure that works: TL;DR (3 bullets) → narrative paragraph →
+  what's exciting fans (hooks + evidence quotes) → ideas to build on
+  (concrete campaign ideas) → watch-outs (honest criticism + how to react)
+  → receipts (verbatim quotes with links).
+- Never sugarcoat. Flag negative sentiment clearly so they can make decisions.
+- Queries can be any artist, song, album, or tour, written like a Google
+  search (e.g. `phoebe bridgers "lost boys"`). Irrelevant matches (other
+  "Lost Boys") are a known problem; `query_utils.relevance_matcher` handles it.
+- Typical run: `combined_report.py '<query>' --since 3d --post-limit 50
+  --tweet-limit 300 --tiktok-videos 30 --tiktok-comments 30`. Full runs take
+  30+ minutes, so run them in the background and check the log.
+
+## Known issues
+
+- **X/Twitter returns 0 tweets with no error:** upgrade twscrape first
+  (`pip install -U twscrape`), then re-test with a 5-tweet search. This fixed
+  it twice (0.19.1→0.20.0, 0.20.0→0.20.1). Check whether the account is
+  locked next. Refresh cookies via `twitter_setup.py` only as a last resort.
+- `twitter_setup.py`'s add-account silently no-ops if the username is already
+  in the pool. Delete the account first so new cookies actually get written.
+- TikTok is the flakiest source (ms_token expires, anti-bot changes). It's
+  often skipped with `--skip-tiktok`.
+
+## Ideas on deck (not started)
+
+A StatSocial-style "audience intelligence" direction, always in aggregate and
+never profiling identifiable individuals. The options discussed:
+Creator Discovery (rank the accounts driving the conversation by real
+engagement; recommended first), an Audience Affinity Map (other artists and
+brands the audience co-mentions), a Cross-Platform Footprint view, and a
+structured data-export layer.
 
 ## Conventions
 
