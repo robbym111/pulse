@@ -50,6 +50,18 @@ def parse_args():
     p.add_argument("--skip-editorial", action="store_true")
     p.add_argument("--skip-twitter", action="store_true")
     p.add_argument("--skip-tiktok", action="store_true")
+    p.add_argument("--tiktok-sounds", default="",
+                   help="comma-separated TikTok sound links or ids to always pull")
+    p.add_argument("--tiktok-max-sounds", type=int, default=3,
+                   help="extra sounds to find automatically from the artist (0 = off)")
+    p.add_argument("--tiktok-sound-videos", type=int, default=20,
+                   help="videos to pull per sound")
+    p.add_argument("--tiktok-artist-videos", type=int, default=10,
+                   help="recent videos to pull from the artist's own account (0 = off)")
+    p.add_argument("--skip-creators", action="store_true",
+                   help="skip Creator Discovery (ranking + one brief-model call)")
+    p.add_argument("--creators", type=int, default=15,
+                   help="accounts to show in the Creator Discovery table")
     p.add_argument("--tiktok-videos", type=int, default=20,
                    help="Max TikTok videos to pull.")
     p.add_argument("--tiktok-comments", type=int, default=30,
@@ -118,7 +130,8 @@ def _fetch_and_score(source_name, platform, fetch_fn, fetch_kwargs, keyword, mod
         return []
 
 
-def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twitter=None, tiktok=None):
+def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twitter=None, tiktok=None,
+                         creator_lines=None, extra_lines=None):
     stamp = datetime.now().strftime("%B %d, %Y at %H:%M")
     twitter = twitter or []
     tiktok = tiktok or []
@@ -265,6 +278,12 @@ def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twit
         if brief and brief.get("creative_ideas"):
             all_ideas.extend(brief["creative_ideas"])
 
+    if extra_lines:
+        L.extend(extra_lines)
+
+    if creator_lines:
+        L.extend(creator_lines)
+
     if all_ideas:
         L.append("---")
         L.append("## Master ideas list — across all platforms")
@@ -279,6 +298,16 @@ def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twit
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(L))
+
+
+def _tiktok_sound_lines(items):
+    if not items:
+        return None
+    try:
+        from tiktok_source import sound_markdown
+    except ImportError:
+        return None
+    return sound_markdown(items) or None
 
 
 def main():
@@ -405,7 +434,11 @@ def main():
         try:
             from tiktok_source import fetch_items as tiktok_fetch
             tt_kwargs = dict(keyword=args.keyword, video_limit=args.tiktok_videos,
-                             comments_per_video=args.tiktok_comments, time_filter=args.time)
+                             comments_per_video=args.tiktok_comments, time_filter=args.time,
+                             sounds=[x for x in args.tiktok_sounds.split(",") if x.strip()],
+                             max_sounds=args.tiktok_max_sounds,
+                             sound_videos=args.tiktok_sound_videos,
+                             artist_videos=args.tiktok_artist_videos)
             if since_cutoff:
                 tt_kwargs["since"] = since_cutoff
             scored = _fetch_and_score(
@@ -430,6 +463,26 @@ def main():
     if not results:
         sys.exit("\n  No data from any source. Check your keywords and credentials.")
 
+    all_items = (
+        results.get("reddit", [])
+        + results.get("youtube", [])
+        + results.get("twitter", [])
+        + results.get("tiktok", [])
+        + results.get("editorial", [])
+    )
+
+    # --- CREATOR DISCOVERY ---
+    creator_lines = None
+    if not args.skip_creators:
+        from creator_discovery import rank_creators, creator_read, markdown_section, write_creators_csv
+        creators = rank_creators(all_items, args.keyword)
+        if creators:
+            creators_path = f"pulse_creators_{safe}_{stamp}.csv"
+            write_creators_csv(creators, creators_path)
+            print(f"\n  Creator Discovery: {len(creators)} accounts ranked → {creators_path}")
+            read = creator_read(creators, args.keyword, args.brief_model)
+            creator_lines = markdown_section(creators, read, top_n=args.creators)
+
     # --- COMBINED BRIEF ---
     md_path = f"pulse_combined_{safe}_{stamp}_brief.md"
     print(f"\n  Writing combined brief...")
@@ -442,16 +495,11 @@ def main():
         briefs=briefs,
         keyword=args.keyword,
         path=md_path,
+        creator_lines=creator_lines,
+        extra_lines=_tiktok_sound_lines(results.get("tiktok", [])),
     )
     print(f"\n  ✓ Combined brief: {md_path}")
 
-    all_items = (
-        results.get("reddit", [])
-        + results.get("youtube", [])
-        + results.get("twitter", [])
-        + results.get("tiktok", [])
-        + results.get("editorial", [])
-    )
     chat_path = f"pulse_chat_{safe}_{stamp}.csv"
     max_rows = args.chat_rows if args.chat_rows > 0 else None
     write_chat_csv(all_items, keyword=args.keyword, stamp=stamp, path=chat_path,

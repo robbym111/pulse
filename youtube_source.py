@@ -60,11 +60,11 @@ def _search_videos(keyword, limit, key):
         # Description + channel help the relevance check catch videos whose
         # title alone doesn't name the artist (e.g. "NEW ALBUM ANNOUNCEMENT").
         blob = " ".join([title, snip.get("description", ""), snip.get("channelTitle", "")])
-        out.append((vid, title, blob))
+        out.append((vid, title, blob, snip.get("channelTitle", "")))
     return out
 
 
-def _video_comments(video_id, video_title, limit, key):
+def _video_comments(video_id, video_title, limit, key, channel=""):
     r = requests.get(
         f"{API_BASE}/commentThreads",
         params={
@@ -99,7 +99,10 @@ def _video_comments(video_id, video_title, limit, key):
                 impact=_impact(likes, replies),
                 permalink=f"https://youtube.com/watch?v={video_id}&lc={thread['id']}",
                 venue=f"YouTube · {video_title[:40]}",
-                extra={"like_count": likes, "reply_count": replies},
+                # video_channel lets creator_discovery credit these comments
+                # to the channel whose video drew them.
+                extra={"like_count": likes, "reply_count": replies,
+                       "video_channel": channel},
             )
         )
     return items
@@ -117,16 +120,16 @@ def fetch_items(keyword, video_limit=10, comments_per_video=30, raw_query=None):
     videos = _search_videos(keyword, video_limit, key)
 
     is_relevant = relevance_matcher(raw_query or keyword)
-    relevant = [(vid, title) for (vid, title, blob) in videos if is_relevant(blob)]
+    relevant = [(vid, title, ch) for (vid, title, blob, ch) in videos if is_relevant(blob)]
     dropped = len(videos) - len(relevant)
     if dropped:
         print(f"    Kept {len(relevant)}/{len(videos)} videos as on-topic "
               f"(dropped {dropped} off-topic).")
 
     items = []
-    for vid, title in relevant:
+    for vid, title, channel in relevant:
         try:
-            items.extend(_video_comments(vid, title, comments_per_video, key))
+            items.extend(_video_comments(vid, title, comments_per_video, key, channel))
         except Exception as e:
             print(f"    (skipped video {vid}: {e})")
     print(f"    Got {len(items)} comments across {len(relevant)} videos")
