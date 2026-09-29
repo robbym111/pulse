@@ -164,7 +164,9 @@ def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twit
         L.append(f"> **{top_brief['headline']}**")
         L.append("")
 
-    L.append(f"*Generated {stamp} · {total} items across Reddit, YouTube, Twitter/X, TikTok, and music press · "
+    present = [name for name, its in [("Reddit", reddit), ("YouTube", youtube), ("Twitter/X", twitter),
+                                        ("TikTok", tiktok), ("music press", editorial)] if its]
+    L.append(f"*Generated {stamp} · {total} items across {', '.join(present) or 'no sources'} · "
              f"avg sentiment {avg:+.2f} (−1 to +1)*")
     L.append("")
 
