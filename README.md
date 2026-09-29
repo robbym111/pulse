@@ -114,6 +114,7 @@ Produces:
 - `pulse_combined_lost_boys_TIMESTAMP_brief.md` — the unified marketer's brief
 - `pulse_reddit_...csv`, `pulse_youtube_...csv`, etc. — per-source CSVs
 - `pulse_creators_...csv` — every account in the pulse, ranked (see Creator Discovery)
+- `pulse_affinity_...csv` — every co-mentioned artist/brand/show/place (see Affinity Map)
 
 ### TikTok: artist account + sounds
 
@@ -132,6 +133,26 @@ its link (the `tiktok.com/music/...` one, not a `/discover/` page):
 ```bash
 python3 combined_report.py 'phoebe bridgers "kill me"' --since 7d \
   --tiktok-sounds https://www.tiktok.com/music/Kill-Me-7673480507100121104
+```
+
+### Audience Affinity Map
+
+The brief also gets an **Audience Affinity Map**: the other artists, brands,
+films/shows, places and events the audience names in their own posts about
+the query, with how many people mention each, on which platforms, the mood of
+those posts, and an example. A strategist read adds how fans position the
+artist against peers ("Elliott Smith with confidence"), partnership angles
+(tour support, brand collabs, syncs), and cautions (comparisons to avoid).
+
+The names come from the existing scoring pass, so there are no extra calls
+per item. Only public entities are counted, never private people or
+usernames. It's co-mention, not a population-weighted affinity score.
+
+Run it on an earlier report (older CSVs get their names extracted in one
+cheap Haiku pass):
+
+```bash
+python3 affinity_map.py pulse_chat_phoebe_bridgers_*.csv --keyword 'phoebe bridgers'
 ```
 
 ### Creator Discovery
@@ -192,6 +213,7 @@ python3 main.py "Lost Boys" \
 | `--tiktok-artist-videos` | `10` | Recent videos from the artist's own account (0 = off) |
 | `--creators` | `15` | Accounts shown in the Creator Discovery table |
 | `--skip-creators` | — | Skip Creator Discovery |
+| `--skip-affinity` | — | Skip the Audience Affinity Map |
 
 ---
 

@@ -58,6 +58,8 @@ def parse_args():
                    help="videos to pull per sound")
     p.add_argument("--tiktok-artist-videos", type=int, default=10,
                    help="recent videos to pull from the artist's own account (0 = off)")
+    p.add_argument("--skip-affinity", action="store_true",
+                   help="skip the Audience Affinity Map (one brief-model call)")
     p.add_argument("--skip-creators", action="store_true",
                    help="skip Creator Discovery (ranking + one brief-model call)")
     p.add_argument("--creators", type=int, default=15,
@@ -131,7 +133,7 @@ def _fetch_and_score(source_name, platform, fetch_fn, fetch_kwargs, keyword, mod
 
 
 def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twitter=None, tiktok=None,
-                         creator_lines=None, extra_lines=None):
+                         creator_lines=None, extra_lines=None, affinity_lines=None):
     stamp = datetime.now().strftime("%B %d, %Y at %H:%M")
     twitter = twitter or []
     tiktok = tiktok or []
@@ -283,6 +285,9 @@ def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twit
 
     if creator_lines:
         L.extend(creator_lines)
+
+    if affinity_lines:
+        L.extend(affinity_lines)
 
     if all_ideas:
         L.append("---")
@@ -483,6 +488,19 @@ def main():
             read = creator_read(creators, args.keyword, args.brief_model)
             creator_lines = markdown_section(creators, read, top_n=args.creators)
 
+    # --- AUDIENCE AFFINITY MAP ---
+    affinity_lines = None
+    if not args.skip_affinity:
+        from affinity_map import build_affinities, affinity_read, markdown_section as affinity_md, \
+            write_affinity_csv
+        entities = build_affinities(all_items, args.keyword)
+        if entities:
+            affinity_path = f"pulse_affinity_{safe}_{stamp}.csv"
+            write_affinity_csv(entities, affinity_path)
+            print(f"\n  Affinity Map: {len(entities)} co-mentioned entities → {affinity_path}")
+            read = affinity_read(entities, args.keyword, args.brief_model)
+            affinity_lines = affinity_md(entities, read)
+
     # --- COMBINED BRIEF ---
     md_path = f"pulse_combined_{safe}_{stamp}_brief.md"
     print(f"\n  Writing combined brief...")
@@ -496,6 +514,7 @@ def main():
         keyword=args.keyword,
         path=md_path,
         creator_lines=creator_lines,
+        affinity_lines=affinity_lines,
         extra_lines=_tiktok_sound_lines(results.get("tiktok", [])),
     )
     print(f"\n  ✓ Combined brief: {md_path}")

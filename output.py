@@ -100,6 +100,26 @@ def print_summary(items, keyword, top_n=8):
     print("=" * 64)
 
 
+def format_mentions(mentions):
+    """[{'name': 'Taylor Swift', 'type': 'artist'}] -> 'Taylor Swift (artist)'."""
+    return "; ".join(f"{m['name']} ({m['type']})" for m in mentions or [])
+
+
+def parse_mentions(cell):
+    """Inverse of format_mentions, for reading CSVs back."""
+    out = []
+    for part in (cell or "").split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        if part.endswith(")") and " (" in part:
+            name, t = part[:-1].rsplit(" (", 1)
+            out.append({"name": name.strip(), "type": t.strip()})
+        else:
+            out.append({"name": part, "type": "other"})
+    return out
+
+
 def write_chat_csv(items, keyword, stamp, path, max_rows=2000):
     """
     Chat-optimised export for pasting into Claude Chat.
@@ -110,7 +130,7 @@ def write_chat_csv(items, keyword, stamp, path, max_rows=2000):
     """
     cols = [
         "platform", "venue", "author", "post_title",
-        "sentiment_label", "sentiment_score", "themes",
+        "sentiment_label", "sentiment_score", "themes", "mentions",
         "quote", "takeaway", "text", "permalink",
     ]
 
@@ -135,6 +155,7 @@ def write_chat_csv(items, keyword, stamp, path, max_rows=2000):
         for it in capped:
             row = dict(it)
             row["themes"] = "; ".join(it.get("themes", []))
+            row["mentions"] = format_mentions(it.get("mentions"))
             row["quote"] = it.get("quote") or ""
             row["takeaway"] = it.get("takeaway") or ""
             w.writerow(row)
@@ -144,7 +165,7 @@ def write_csv(items, path):
     cols = [
         "platform", "type", "subreddit", "venue", "post_title", "author",
         "created_iso", "score", "num_comments", "impact",
-        "sentiment_label", "sentiment_score", "themes",
+        "sentiment_label", "sentiment_score", "themes", "mentions",
         "like_count", "retweet_count", "reply_count", "quote_count",
         "view_count", "share_count", "video_channel",
         "tiktok_via", "sound_title", "sound_author",
@@ -159,4 +180,5 @@ def write_csv(items, path):
                 it.get("created_utc", 0), tz=timezone.utc
             ).isoformat()
             row["themes"] = "; ".join(it.get("themes", []))
+            row["mentions"] = format_mentions(it.get("mentions"))
             w.writerow(row)
