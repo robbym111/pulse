@@ -32,6 +32,7 @@ module function directly. `editorial_source` and `reddit_source` need no keys.
 common.clean_text / is_junk    -> HTML decoded, URLs stripped, boilerplate dropped
 claude_sentiment.score_items() -> label, score (-1..+1), themes (batched)
 brief.synthesize_brief()       -> per-source narrative brief (one call per source)
+creator_discovery              -> rank accounts by engagement generated (+1 call)
 output.py                      -> terminal summary + CSV
 combined_report.py             -> unified .md brief
 ```
@@ -94,14 +95,21 @@ running CLI commands once things are set up.
 - TikTok is the flakiest source (ms_token expires, anti-bot changes). It's
   often skipped with `--skip-tiktok`.
 
-## Ideas on deck (not started)
+## Audience intelligence (StatSocial-style)
 
-A StatSocial-style "audience intelligence" direction, always in aggregate and
-never profiling identifiable individuals. The options discussed:
-Creator Discovery (rank the accounts driving the conversation by real
-engagement; recommended first), an Audience Affinity Map (other artists and
-brands the audience co-mentions), a Cross-Platform Footprint view, and a
-structured data-export layer.
+The direction is audience intelligence, always from public content already in
+the pulse. It never profiles identifiable individuals, never links handles
+across platforms, and never uses personal disclosures (health, trauma,
+politics, etc.) as a reason to target someone.
+
+- **Built: Creator Discovery** (`creator_discovery.py`). Ranks each
+  (platform, author) by own impact + the impact of replies it drew, plus
+  2 points per reply. Replies are credited to the parent post's author via
+  permalink (Reddit, TikTok) or to the video's channel (`video_channel`,
+  YouTube). Roles: creator / official (handle ≈ artist in the query) /
+  voice (commenter only). Only creators go to the partner/watch-list read.
+- Not started: Audience Affinity Map (other artists/brands the audience
+  co-mentions), Cross-Platform Footprint view, structured data-export layer.
 
 ## Conventions
 

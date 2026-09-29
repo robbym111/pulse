@@ -113,6 +113,31 @@ python3 combined_report.py "Lost Boys" \
 Produces:
 - `pulse_combined_lost_boys_TIMESTAMP_brief.md` — the unified marketer's brief
 - `pulse_reddit_...csv`, `pulse_youtube_...csv`, etc. — per-source CSVs
+- `pulse_creators_...csv` — every account in the pulse, ranked (see Creator Discovery)
+
+### Creator Discovery
+
+Every combined run ends its brief with a **Creator Discovery** section: the
+accounts actually driving the conversation, ranked by the engagement they
+generated in this pulse (their own posts + the replies they drew), not by
+follower count. It includes a partner shortlist and a watch list of critics
+gaining traction, written by the brief model.
+
+- **Creators** posted content (X, TikTok, Reddit posts) or made the YouTube
+  video being discussed. Only creators are suggested as partners.
+- **Official** accounts look like the artist in your query (e.g.
+  `PhoebeBridgersVEVO`). They're shown, but never suggested.
+- **Loudest voices** are the most-engaged commenters, shown for context only.
+
+It only uses public posts already in the pulse, and never links the same
+handle across platforms. You'll get the richest results with X and TikTok on.
+
+Re-rank an earlier run without re-scraping (use the per-source CSVs, not the chat CSV):
+
+```bash
+python3 creator_discovery.py pulse_twitter_phoebe_bridgers_*.csv pulse_tiktok_phoebe_bridgers_*.csv \
+  --keyword 'phoebe bridgers'           # add --no-read to skip the Claude call
+```
 
 ### Quick Reddit + Twitter pulse
 
@@ -142,6 +167,8 @@ python3 main.py "Lost Boys" \
 | `--skip-tiktok` | — | Skip that source |
 | `--tiktok-videos` | `10` | TikTok videos to scrape |
 | `--tiktok-comments` | `20` | Comments per TikTok video |
+| `--creators` | `15` | Accounts shown in the Creator Discovery table |
+| `--skip-creators` | — | Skip Creator Discovery |
 
 ---
 

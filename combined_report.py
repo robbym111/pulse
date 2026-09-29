@@ -50,6 +50,10 @@ def parse_args():
     p.add_argument("--skip-editorial", action="store_true")
     p.add_argument("--skip-twitter", action="store_true")
     p.add_argument("--skip-tiktok", action="store_true")
+    p.add_argument("--skip-creators", action="store_true",
+                   help="skip Creator Discovery (ranking + one brief-model call)")
+    p.add_argument("--creators", type=int, default=15,
+                   help="accounts to show in the Creator Discovery table")
     p.add_argument("--tiktok-videos", type=int, default=20,
                    help="Max TikTok videos to pull.")
     p.add_argument("--tiktok-comments", type=int, default=30,
@@ -118,7 +122,8 @@ def _fetch_and_score(source_name, platform, fetch_fn, fetch_kwargs, keyword, mod
         return []
 
 
-def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twitter=None, tiktok=None):
+def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twitter=None, tiktok=None,
+                         creator_lines=None):
     stamp = datetime.now().strftime("%B %d, %Y at %H:%M")
     twitter = twitter or []
     tiktok = tiktok or []
@@ -264,6 +269,9 @@ def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twit
         brief = briefs.get(key)
         if brief and brief.get("creative_ideas"):
             all_ideas.extend(brief["creative_ideas"])
+
+    if creator_lines:
+        L.extend(creator_lines)
 
     if all_ideas:
         L.append("---")
@@ -430,6 +438,26 @@ def main():
     if not results:
         sys.exit("\n  No data from any source. Check your keywords and credentials.")
 
+    all_items = (
+        results.get("reddit", [])
+        + results.get("youtube", [])
+        + results.get("twitter", [])
+        + results.get("tiktok", [])
+        + results.get("editorial", [])
+    )
+
+    # --- CREATOR DISCOVERY ---
+    creator_lines = None
+    if not args.skip_creators:
+        from creator_discovery import rank_creators, creator_read, markdown_section, write_creators_csv
+        creators = rank_creators(all_items, args.keyword)
+        if creators:
+            creators_path = f"pulse_creators_{safe}_{stamp}.csv"
+            write_creators_csv(creators, creators_path)
+            print(f"\n  Creator Discovery: {len(creators)} accounts ranked → {creators_path}")
+            read = creator_read(creators, args.keyword, args.brief_model)
+            creator_lines = markdown_section(creators, read, top_n=args.creators)
+
     # --- COMBINED BRIEF ---
     md_path = f"pulse_combined_{safe}_{stamp}_brief.md"
     print(f"\n  Writing combined brief...")
@@ -442,16 +470,10 @@ def main():
         briefs=briefs,
         keyword=args.keyword,
         path=md_path,
+        creator_lines=creator_lines,
     )
     print(f"\n  ✓ Combined brief: {md_path}")
 
-    all_items = (
-        results.get("reddit", [])
-        + results.get("youtube", [])
-        + results.get("twitter", [])
-        + results.get("tiktok", [])
-        + results.get("editorial", [])
-    )
     chat_path = f"pulse_chat_{safe}_{stamp}.csv"
     max_rows = args.chat_rows if args.chat_rows > 0 else None
     write_chat_csv(all_items, keyword=args.keyword, stamp=stamp, path=chat_path,
