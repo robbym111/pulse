@@ -19,3 +19,4 @@ __pycache__/
 pulse_affinity_*.md
 pulse_*.json
 *.db
+pulse_*_dashboard.html

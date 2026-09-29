@@ -186,6 +186,7 @@ def markdown_section(footprint, read=None):
     if read and read.get("gaps"):
         L.append("**Gaps to act on**")
         L.append("")
-        L.extend(f"- {g}" for g in read["gaps"])
+        L.extend(f"- {' — '.join(map(str, g.values())) if isinstance(g, dict) else g}"
+                 for g in read["gaps"])
         L.append("")
     return L
