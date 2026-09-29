@@ -58,6 +58,13 @@ def parse_args():
                    help="videos to pull per sound")
     p.add_argument("--tiktok-artist-videos", type=int, default=10,
                    help="recent videos to pull from the artist's own account (0 = off)")
+    p.add_argument("--skip-footprint", action="store_true",
+                   help="skip the Cross-Platform Footprint (one brief-model call)")
+    p.add_argument("--db", default="pulse_history.db",
+                   help="SQLite history to append each run to")
+    p.add_argument("--no-db", action="store_true", help="don't append to the history database")
+    p.add_argument("--skip-affinity", action="store_true",
+                   help="skip the Audience Affinity Map (one brief-model call)")
     p.add_argument("--skip-creators", action="store_true",
                    help="skip Creator Discovery (ranking + one brief-model call)")
     p.add_argument("--creators", type=int, default=15,
@@ -131,7 +138,8 @@ def _fetch_and_score(source_name, platform, fetch_fn, fetch_kwargs, keyword, mod
 
 
 def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twitter=None, tiktok=None,
-                         creator_lines=None, extra_lines=None):
+                         creator_lines=None, extra_lines=None, affinity_lines=None,
+                         footprint_lines=None):
     stamp = datetime.now().strftime("%B %d, %Y at %H:%M")
     twitter = twitter or []
     tiktok = tiktok or []
@@ -281,8 +289,14 @@ def write_combined_brief(reddit, youtube, editorial, briefs, keyword, path, twit
     if extra_lines:
         L.extend(extra_lines)
 
+    if footprint_lines:
+        L.extend(footprint_lines)
+
     if creator_lines:
         L.extend(creator_lines)
+
+    if affinity_lines:
+        L.extend(affinity_lines)
 
     if all_ideas:
         L.append("---")
@@ -471,8 +485,18 @@ def main():
         + results.get("editorial", [])
     )
 
+    reads = {}
+
+    # --- CROSS-PLATFORM FOOTPRINT ---
+    footprint, footprint_lines = [], None
+    if not args.skip_footprint:
+        from footprint import build_footprint, footprint_read, markdown_section as footprint_md
+        footprint = build_footprint(all_items)
+        reads["footprint"] = footprint_read(footprint, args.keyword, args.brief_model)
+        footprint_lines = footprint_md(footprint, reads["footprint"])
+
     # --- CREATOR DISCOVERY ---
-    creator_lines = None
+    creators, creator_lines = [], None
     if not args.skip_creators:
         from creator_discovery import rank_creators, creator_read, markdown_section, write_creators_csv
         creators = rank_creators(all_items, args.keyword)
@@ -480,8 +504,21 @@ def main():
             creators_path = f"pulse_creators_{safe}_{stamp}.csv"
             write_creators_csv(creators, creators_path)
             print(f"\n  Creator Discovery: {len(creators)} accounts ranked → {creators_path}")
-            read = creator_read(creators, args.keyword, args.brief_model)
-            creator_lines = markdown_section(creators, read, top_n=args.creators)
+            reads["creators"] = creator_read(creators, args.keyword, args.brief_model)
+            creator_lines = markdown_section(creators, reads["creators"], top_n=args.creators)
+
+    # --- AUDIENCE AFFINITY MAP ---
+    entities, affinity_lines = [], None
+    if not args.skip_affinity:
+        from affinity_map import build_affinities, affinity_read, markdown_section as affinity_md, \
+            write_affinity_csv
+        entities = build_affinities(all_items, args.keyword)
+        if entities:
+            affinity_path = f"pulse_affinity_{safe}_{stamp}.csv"
+            write_affinity_csv(entities, affinity_path)
+            print(f"\n  Affinity Map: {len(entities)} co-mentioned entities → {affinity_path}")
+            reads["affinity"] = affinity_read(entities, args.keyword, args.brief_model)
+            affinity_lines = affinity_md(entities, reads["affinity"])
 
     # --- COMBINED BRIEF ---
     md_path = f"pulse_combined_{safe}_{stamp}_brief.md"
@@ -496,6 +533,8 @@ def main():
         keyword=args.keyword,
         path=md_path,
         creator_lines=creator_lines,
+        affinity_lines=affinity_lines,
+        footprint_lines=footprint_lines,
         extra_lines=_tiktok_sound_lines(results.get("tiktok", [])),
     )
     print(f"\n  ✓ Combined brief: {md_path}")
@@ -504,7 +543,21 @@ def main():
     max_rows = args.chat_rows if args.chat_rows > 0 else None
     write_chat_csv(all_items, keyword=args.keyword, stamp=stamp, path=chat_path,
                    max_rows=max_rows)
-    print(f"  ✓ Chat CSV:       {chat_path}  ({len(all_items)} items)\n")
+    print(f"  ✓ Chat CSV:       {chat_path}  ({len(all_items)} items)")
+
+    # --- STRUCTURED EXPORT + HISTORY ---
+    from export import build_run, write_json, append_history
+    run = build_run(args.keyword, stamp, since_cutoff, all_items, briefs=briefs,
+                    creators=creators, affinities=entities, footprint=footprint, reads=reads)
+    json_path = f"pulse_{safe}_{stamp}.json"
+    write_json(run, json_path)
+    print(f"  ✓ JSON export:    {json_path}")
+    if not args.no_db:
+        try:
+            append_history(run, args.db, json_path)
+            print(f"  ✓ History:        {args.db}  (python3 history.py trend '{args.keyword}')\n")
+        except Exception as e:
+            print(f"  ✗ History append failed: {e}\n")
 
 
 if __name__ == "__main__":

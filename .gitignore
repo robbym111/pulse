@@ -16,3 +16,6 @@ __pycache__/
 # Editor / OS
 .DS_Store
 .claude/
+pulse_affinity_*.md
+pulse_*.json
+*.db

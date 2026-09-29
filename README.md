@@ -114,6 +114,7 @@ Produces:
 - `pulse_combined_lost_boys_TIMESTAMP_brief.md` — the unified marketer's brief
 - `pulse_reddit_...csv`, `pulse_youtube_...csv`, etc. — per-source CSVs
 - `pulse_creators_...csv` — every account in the pulse, ranked (see Creator Discovery)
+- `pulse_affinity_...csv` — every co-mentioned artist/brand/show/place (see Affinity Map)
 
 ### TikTok: artist account + sounds
 
@@ -132,6 +133,57 @@ its link (the `tiktok.com/music/...` one, not a `/discover/` page):
 ```bash
 python3 combined_report.py 'phoebe bridgers "kill me"' --since 7d \
   --tiktok-sounds https://www.tiktok.com/music/Kill-Me-7673480507100121104
+```
+
+### Cross-Platform Footprint
+
+When a run covers two or more platforms, the brief shows **where the
+audience is and how each platform differs**: each platform's share of posts
+and people, its mood, and the themes and names it over-indexes on
+("video-praise 2.6×" = talked about 2.6 times as much on TikTok as across
+the whole pulse). A strategist read adds a concrete play per platform and
+gaps to act on (e.g. lots of volume on X but a sour mood). Shares reflect
+your fetch limits, not total platform size.
+
+### JSON export + history across runs
+
+Every run also writes:
+- `pulse_<query>_<stamp>.json`: the whole run in one structured file (every
+  scored item, briefs, creators, affinities, footprint, reads), ready for
+  dashboards, notebooks, or another Claude chat.
+- `pulse_history.db`: a SQLite database that every run is appended to
+  (`--no-db` to skip).
+
+Read the history from the terminal:
+
+```bash
+python3 history.py                                   # every run, newest first
+python3 history.py trend 'phoebe bridgers'           # one artist over time
+python3 history.py compare 'phoebe bridgers' 'boygenius'
+python3 history.py sql "SELECT name, SUM(authors) FROM affinities GROUP BY name ORDER BY 2 DESC LIMIT 20"
+```
+
+Or open `pulse_history.db` in [DB Browser for SQLite](https://sqlitebrowser.org)
+(free). Tables: `runs`, `items`, `creators`, `affinities`, `platforms`.
+
+### Audience Affinity Map
+
+The brief also gets an **Audience Affinity Map**: the other artists, brands,
+films/shows, places and events the audience names in their own posts about
+the query, with how many people mention each, on which platforms, the mood of
+those posts, and an example. A strategist read adds how fans position the
+artist against peers ("Elliott Smith with confidence"), partnership angles
+(tour support, brand collabs, syncs), and cautions (comparisons to avoid).
+
+The names come from the existing scoring pass, so there are no extra calls
+per item. Only public entities are counted, never private people or
+usernames. It's co-mention, not a population-weighted affinity score.
+
+Run it on an earlier report (older CSVs get their names extracted in one
+cheap Haiku pass):
+
+```bash
+python3 affinity_map.py pulse_chat_phoebe_bridgers_*.csv --keyword 'phoebe bridgers'
 ```
 
 ### Creator Discovery
@@ -192,6 +244,10 @@ python3 main.py "Lost Boys" \
 | `--tiktok-artist-videos` | `10` | Recent videos from the artist's own account (0 = off) |
 | `--creators` | `15` | Accounts shown in the Creator Discovery table |
 | `--skip-creators` | — | Skip Creator Discovery |
+| `--skip-affinity` | — | Skip the Audience Affinity Map |
+| `--skip-footprint` | — | Skip the Cross-Platform Footprint |
+| `--db` | `pulse_history.db` | History database each run is appended to |
+| `--no-db` | — | Don't append to the history database |
 
 ---
 

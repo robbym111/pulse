@@ -5,6 +5,7 @@ We send ~15 items per call and ask for a JSON array back. Each item gets:
   - label: positive | negative | neutral | mixed
   - score: -1.0 (most negative) to 1.0 (most positive)
   - themes: 1-3 short tags (e.g. "antonoff-production", "nostalgia", "video-praise")
+  - mentions: other public artists/brands/shows/places named (feeds affinity_map)
 
 Batching is the whole cost game. 300 comments at 1 call each is 300 calls;
 batched at 15, it's 20 calls. Same tokens in, far less overhead.
@@ -47,6 +48,7 @@ For each item return:
 - "themes": array of 1-3 lowercase-hyphenated theme tags capturing what the comment is ABOUT (e.g. "production-criticism", "nostalgia", "video-praise", "lyric-quality", "excitement-for-album"). Keep tags reusable across items.
 - "quote": the single most quotable, specific sentence from the text that best captures the author's reaction. Must be an actual verbatim excerpt (≤180 chars). If the text has no quotable sentence, return null.
 - "takeaway": one crisp sentence summarizing the key insight or opinion expressed. Write it as a third-person observation, e.g. "Fan draws parallels between Lost Boys and Stranger Things aesthetic."
+- "mentions": array of other named things the text refers to, besides "{keyword}" itself: each {{"name": canonical public name (e.g. "Taylor Swift", not "tswift"), "type": one of "artist", "brand", "film_tv", "place", "event", "other"}}. Only public entities: artists, bands, albums, brands, products, films, shows, games, venues, festivals, cities. Never private people or usernames. Empty array if none.
 
 Sarcasm and faint praise matter: "wow another masterpiece /s" is negative; "it's fine I guess" is mildly negative; "this is growing on me" is mildly positive.
 
@@ -94,7 +96,20 @@ def _score_batch(batch, keyword, model):
         it["themes"] = themes if isinstance(themes, list) else []
         it["quote"] = r.get("quote") or None
         it["takeaway"] = r.get("takeaway") or None
+        it["mentions"] = _clean_mentions(r.get("mentions"))
     return batch
+
+
+MENTION_TYPES = {"artist", "brand", "film_tv", "place", "event", "other"}
+
+
+def _clean_mentions(raw):
+    out = []
+    for m in raw if isinstance(raw, list) else []:
+        if isinstance(m, dict) and str(m.get("name") or "").strip():
+            t = m.get("type") if m.get("type") in MENTION_TYPES else "other"
+            out.append({"name": str(m["name"]).strip()[:80], "type": t})
+    return out
 
 
 def score_items(items, model, batch_size=15, keyword=""):
@@ -112,5 +127,6 @@ def score_items(items, model, batch_size=15, keyword=""):
                 it.setdefault("sentiment_label", "neutral")
                 it.setdefault("sentiment_score", 0.0)
                 it.setdefault("themes", [])
+                it.setdefault("mentions", [])
             scored.extend(batch)
     return scored
